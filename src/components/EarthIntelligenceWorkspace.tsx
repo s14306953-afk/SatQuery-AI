@@ -7,7 +7,6 @@ import {
   CirclePlay,
   Compass,
   Gauge,
-  MapPinned,
   Mic,
   Pause,
   Radar,
@@ -56,7 +55,6 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
   const evidenceChain = useMemo(() => buildEvidenceChain(activeLocation), [activeLocation])
 
   const currentScene = timeSeries[timelineIndex] ?? timeSeries[timeSeries.length - 1]
-  const selectedEvidence = evidenceChain.find((item) => item.id === selectedEvidenceId) ?? evidenceChain[0]
 
   const handleScenarioRun = () => {
     setScenario(buildScenario(activeLocation, changePercent, selectedScenarioType, impactRadius))
