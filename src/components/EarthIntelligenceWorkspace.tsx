@@ -53,7 +53,7 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
         buildSatelliteImages(activeLocation),
         buildChangeDetection(activeLocation),
         buildForensicAnalysis(activeLocation),
-        buildScenario(activeLocation, changePercent, selectedScenarioType, impactRadius),
+        buildScenario(activeLocation, 20, 'urban-expansion', 800),
       ])
 
       if (!active) return
@@ -69,7 +69,7 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
     return () => {
       active = false
     }
-  }, [activeLocation, changePercent, selectedScenarioType, impactRadius])
+  }, [activeLocation])
 
   const resolvedChangeDetection = changeDetection ?? {
     id: 'loading-change',
