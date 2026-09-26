@@ -856,11 +856,20 @@ function App() {
           image.onerror = () => resolve({ width: 0, height: 0 })
           image.src = objectUrl
         })
+
+        const fileName = file.name.toLowerCase()
+        const isSarCandidate = mode === 'optical_sar' && index === 1
+          || /sar|radar|backscatter/.test(fileName)
+
         return {
           id: crypto.randomUUID(),
           name: file.name,
           url: objectUrl,
-          type: mode === 'before_after' ? (index === 0 ? 'before' : 'after') : 'optical',
+          type: mode === 'before_after'
+            ? (index === 0 ? 'before' : 'after')
+            : isSarCandidate
+              ? 'sar'
+              : 'optical',
           size: file.size,
           ...dimensions,
         } as UploadedImage

@@ -17,13 +17,26 @@ export const uploadImageToStorage = async (file: File, bucket = 'satellite-image
 }
 
 export const validateImageFile = (file: File) => {
-  const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/tiff', 'image/tif']
-  if (!validTypes.includes(file.type) && !file.name.toLowerCase().match(/\.(tif|tiff|jpg|jpeg|png)$/)) {
-    return 'Unsupported image format. Use JPG, JPEG, PNG, TIFF, or GeoTIFF.'
+  const normalizedName = file.name.toLowerCase()
+  const validTypes = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/tiff',
+    'image/tif',
+    'image/geotiff',
+    'application/geotiff',
+    'image/x-tiff',
+  ]
+  const validExtension = /\.(tif|tiff|jpg|jpeg|png|jp2|geotiff)$/i
+
+  const hasValidType = validTypes.includes(file.type) || validExtension.test(normalizedName)
+  if (!hasValidType) {
+    return 'Unsupported image format. Use JPG, JPEG, PNG, TIFF, GeoTIFF, or JP2.'
   }
 
-  if (file.size > 20 * 1024 * 1024) {
-    return 'File is too large. Please upload a file under 20MB.'
+  if (file.size > 30 * 1024 * 1024) {
+    return 'File is too large. Please upload a file under 30MB.'
   }
 
   return null
