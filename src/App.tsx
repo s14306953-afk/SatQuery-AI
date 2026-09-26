@@ -1095,7 +1095,7 @@ function App() {
   }
 
   return (
-    <div className="premium-shell min-h-screen bg-[#040b16] text-slate-100">
+    <div className="premium-shell min-h-screen bg-[#f8f5ef] text-slate-800">
       {isSearchOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 p-4 backdrop-blur-sm">
           <div className="mx-auto mt-16 max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_20px_80px_rgba(15,23,42,0.18)] ring-1 ring-teal-100">
