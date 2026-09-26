@@ -136,6 +136,7 @@ function App() {
   const [nearbyQuery, setNearbyQuery] = useState('')
   const [nearbyLoading, setNearbyLoading] = useState(false)
   const [nearbyError, setNearbyError] = useState('')
+  const [manualLocationInput, setManualLocationInput] = useState('')
   const [selectedNearbyIssue, setSelectedNearbyIssue] = useState<NearbyIssue | null>(null)
   const [nearbyHeatmapEnabled, setNearbyHeatmapEnabled] = useState(true)
   const [nearbyHeatmapOpacity, setNearbyHeatmapOpacity] = useState(0.45)
@@ -294,11 +295,27 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [placeSearch, selectedPlaceName])
 
+  const parseManualLocation = (value: string): { lat: number; lng: number } | null => {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+
+    const match = trimmed.match(/^(-?\d{1,3}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)$/)
+    if (!match) return null
+
+    const latitude = Number(match[1])
+    const longitude = Number(match[2])
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null
+
+    return { lat: latitude, lng: longitude }
+  }
+
   const selectPlace = (place: { display_name: string; lat: string; lon: string }) => {
     const latitude = Number(place.lat)
     const longitude = Number(place.lon)
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return
     setCurrentLocation({ lat: latitude, lng: longitude })
+    setManualLocationInput(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`)
     setSelectedPlaceName(place.display_name)
     setLocationAddress(place.display_name)
     setLocationStatus('Selected place')
@@ -315,7 +332,7 @@ function App() {
   const openNearbyAnalysis = () => {
     setNearbyPermissionMessage(currentLocation
       ? 'SatQuery AI will check verified satellite scene availability for the selected place and selected radius.'
-      : 'SatQuery AI needs your location to analyze satellite imagery and identify potential issues in your surrounding area.')
+      : 'SatQuery AI needs your location to analyze satellite imagery and identify potential issues in your surrounding area. You can also enter a latitude/longitude manually if browser location is blocked.')
     setNearbyPermissionOpen(true)
     setNearbyError('')
   }
@@ -535,11 +552,13 @@ function App() {
     setNearbyPermissionOpen(false)
     setNearbyLoading(true)
     setNearbyError('')
-    const location = overrideLocation ?? currentLocation ?? await getNearbyLocation()
+
+    const manualLocation = parseManualLocation(manualLocationInput)
+    const location = overrideLocation ?? currentLocation ?? manualLocation ?? await getNearbyLocation()
     if (!location) {
       await recordNearbyPermission('denied')
       setNearbyLoading(false)
-      setNearbyError('Location access was not granted. You can manually select an area on the map instead.')
+      setNearbyError('Location access was not granted. Enter coordinates in the nearby analysis dialog or allow browser location access to continue.')
       return
     }
     await recordNearbyPermission('granted')
@@ -1383,9 +1402,31 @@ function App() {
             <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-2xl border border-teal-400/30 bg-[#111c2d] p-6 shadow-2xl">
               <div className="mb-3 flex items-center gap-2 text-lg font-semibold text-white"><LocateFixed className="text-teal-300" /> Analyze My Area</div>
               <p className="text-sm leading-6 text-slate-300">{nearbyPermissionMessage}</p>
+              <div className="mt-4">
+                <label className="block text-xs uppercase tracking-[0.18em] text-slate-400">Manual coordinates</label>
+                <input
+                  value={manualLocationInput}
+                  onChange={(event) => setManualLocationInput(event.target.value)}
+                  placeholder="19.0760, 72.8777"
+                  className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-teal-400 focus:outline-none"
+                />
+              </div>
               <div className="mt-5 flex justify-end gap-3">
                 <button type="button" onClick={dismissNearbyPermission} className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Not Now</button>
-                <button type="button" onClick={() => void runNearbyAnalysis()} className="rounded-lg bg-teal-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-teal-300">Allow Location</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const manualLocation = parseManualLocation(manualLocationInput)
+                    if (manualLocation) {
+                      void runNearbyAnalysis(manualLocation)
+                      return
+                    }
+                    void runNearbyAnalysis()
+                  }}
+                  className="rounded-lg bg-teal-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-teal-300"
+                >
+                  {manualLocationInput ? 'Use Coordinates' : 'Allow Location'}
+                </button>
               </div>
             </div>
           </div>
