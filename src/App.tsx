@@ -1030,11 +1030,7 @@ function App() {
   const sidebarItems = [
     { label: 'Dashboard', value: 'overview', keywords: ['dashboard', 'summary', 'home', 'welcome', 'stats'] },
     { label: 'Analyze Image', value: 'analysis', keywords: ['analysis', 'upload', 'question', 'ai', 'image', 'query'] },
-    { label: 'Time Machine', value: 'time-machine', keywords: ['time machine', 'historical', 'timeline', 'dates', 'comparison'] },
     { label: 'Satellite Forensics', value: 'forensics', keywords: ['forensics', 'why did it happen', 'cause', 'investigation'] },
-    { label: 'Talk to the Earth', value: 'talk-to-earth', keywords: ['voice', 'talk', 'earth', 'conversation', 'speech'] },
-    { label: 'Evidence Chain', value: 'evidence-chain', keywords: ['evidence', 'chain', 'traceability', 'supporting evidence'] },
-    { label: 'What-If Simulator', value: 'what-if-simulator', keywords: ['what if', 'simulation', 'scenario', 'impact'] },
     { label: 'Change Detection', value: 'modes', keywords: ['change detection', 'disaster', 'agriculture', 'comparison', 'mode'] },
     { label: 'Optical + SAR', value: 'comparison', keywords: ['sensor', 'comparison', 'sar', 'optical', 'multispectral', 'bands'] },
     { label: 'Land Cover', value: 'dataset', keywords: ['dataset', 'copernicus', 'data space', 'sentinel', 'land cover'] },
@@ -1048,7 +1044,6 @@ function App() {
     { label: 'AI Nearby Issues', value: 'nearby', keywords: ['nearby', 'area', 'issues', 'satellite', 'location', 'anomaly'] },
     { label: 'Proximity Analysis', value: 'proximity', keywords: ['proximity', 'nearby features', 'hospitals', 'roads', 'rivers', 'hazards', 'location'] },
     { label: 'Climate & Early Warning', value: 'climate', keywords: ['climate', 'weather', 'forecast', 'warning', 'risk', 'rain'] },
-    { label: 'Data provenance', value: 'provenance', keywords: ['provenance', 'metadata', 'source', 'sensor', 'mission', 'dataset'] },
   ]
 
   const siteSearchCatalog = [
