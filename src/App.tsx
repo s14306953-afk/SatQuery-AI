@@ -863,7 +863,10 @@ function App() {
 
   const handleFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return
-    const selectedFiles = Array.from(fileList).slice(0, mode === 'single' ? 1 : 2)
+
+    const maxImages = mode === 'single' ? 1 : 2
+    const selectedFiles = Array.from(fileList).slice(0, maxImages)
+
     try {
       const uploadedImages = await Promise.all(selectedFiles.map(async (file, index) => {
         const error = validateImageFile(file)
@@ -877,8 +880,12 @@ function App() {
         })
 
         const fileName = file.name.toLowerCase()
-        const isSarCandidate = mode === 'optical_sar' && index === 1
-          || /sar|radar|backscatter/.test(fileName)
+        const looksLikeSar = /sar|radar|backscatter|vv|vh/.test(fileName)
+        const isSarCandidate = mode === 'before_after'
+          ? index === 1
+          : mode === 'optical_sar'
+            ? (index === 1 || looksLikeSar)
+            : looksLikeSar
 
         return {
           id: crypto.randomUUID(),
@@ -893,7 +900,18 @@ function App() {
           ...dimensions,
         } as UploadedImage
       }))
-      setImages(uploadedImages)
+
+      setImages((current) => {
+        const keepExisting = current.filter((image) => {
+          if (mode === 'single') return false
+          if (mode === 'before_after') return image.type !== 'before' && image.type !== 'after'
+          if (mode === 'optical_sar') return image.type !== 'optical' && image.type !== 'sar'
+          return false
+        })
+
+        return [...keepExisting, ...uploadedImages].slice(0, maxImages)
+      })
+
       setAnalysisError('')
     } catch (error) {
       setAnalysisError(error instanceof Error ? error.message : 'The selected files could not be uploaded.')
@@ -1053,7 +1071,12 @@ function App() {
     setIsSpeaking(false)
   }
 
-  const primaryImage = images[0]?.url
+  const primaryImage = mode === 'optical_sar'
+    ? images.find((image) => image.type === 'optical')?.url ?? images[0]?.url ?? null
+    : images[0]?.url ?? null
+  const secondaryComparisonImage = mode === 'optical_sar'
+    ? images.find((image) => image.type === 'sar')?.url ?? images[1]?.url ?? null
+    : images[1]?.url ?? null
 
   const sidebarItems = [
     { label: 'Dashboard', value: 'overview', keywords: ['dashboard', 'summary', 'home', 'welcome', 'stats'] },
@@ -2053,7 +2076,7 @@ function App() {
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
                 <div className="mb-2 text-sm font-medium text-slate-200">SAR</div>
-                {images[1]?.url ? <img src={images[1].url} alt="SAR" className="h-32 w-full rounded-lg object-cover grayscale" /> : <div className="flex h-32 items-center justify-center rounded-lg bg-slate-900 text-xs text-slate-500">Add a SAR image</div>}
+                {secondaryComparisonImage ? <img src={secondaryComparisonImage} alt="SAR" className="h-32 w-full rounded-lg object-cover grayscale" /> : <div className="flex h-32 items-center justify-center rounded-lg bg-slate-900 text-xs text-slate-500">Add a SAR image</div>}
                 <p className="mt-2 text-xs text-slate-400">Useful for surface roughness and all-weather imaging.</p>
               </div>
             </div>
