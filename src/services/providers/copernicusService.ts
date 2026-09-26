@@ -1,4 +1,5 @@
 import type { ChangeDetection, EvidenceItem, ForensicAnalysis, Location, Scenario, TimeSeries } from '../../types'
+import { isSupabaseConfigured, supabase } from '../../lib/supabase'
 
 const readEnv = (key: string, fallback: string) => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined
@@ -6,15 +7,15 @@ const readEnv = (key: string, fallback: string) => {
   return typeof value === 'string' ? value : fallback
 }
 
-const COPERNICUS_BASE_URL = readEnv('COPERNICUS_BASE_URL', 'https://stac.dataspace.copernicus.eu/stac')
-const COPERNICUS_COLLECTION = readEnv('COPERNICUS_COLLECTION', 'sentinel-2-l2a')
-const COPERNICUS_TOKEN = readEnv('COPERNICUS_TOKEN', '')
 const COPERNICUS_BACKEND_URL = readEnv('COPERNICUS_BACKEND_URL', '')
+const snapshotCache = new Map<string, { expiresAt: number; promise: Promise<CopernicusSnapshot> }>()
 
-const getCopernicusSearchUrl = () => {
-  const normalizedBase = COPERNICUS_BASE_URL.replace(/\/+$/, '')
-  const searchUrl = normalizedBase.endsWith('/search') ? normalizedBase : `${normalizedBase}/search`
-  return new URL(searchUrl)
+interface CopernicusSnapshot {
+  timeSeries: TimeSeries[]
+  changeDetection: ChangeDetection | null
+  forensic: ForensicAnalysis | null
+  evidence: EvidenceItem[]
+  scenario: Scenario | null
 }
 
 const toDateValue = (value?: string | null) => {
@@ -41,81 +42,70 @@ const normalizeFeature = (feature: any, index: number): TimeSeries => {
   }
 }
 
-export const getCopernicusSnapshot = async (location: Location) => {
-  const bbox = [
-    location.lng - 0.05,
-    location.lat - 0.05,
-    location.lng + 0.05,
-    location.lat + 0.05,
-  ]
+const fetchCopernicusSnapshot = async (location: Location): Promise<CopernicusSnapshot> => {
+  type SnapshotPayload = {
+    features?: any[]
+    timeSeries?: TimeSeries[]
+    changeDetection?: ChangeDetection | null
+    forensic?: ForensicAnalysis | null
+    evidence?: EvidenceItem[]
+    scenario?: Scenario | null
+  }
+
+  const emptySnapshot = {
+    timeSeries: [] as TimeSeries[],
+    changeDetection: null,
+    forensic: null,
+    evidence: [] as EvidenceItem[],
+    scenario: null,
+  }
 
   if (COPERNICUS_BACKEND_URL) {
     try {
       const response = await fetch(`${COPERNICUS_BACKEND_URL}?lat=${location.lat}&lng=${location.lng}&radius=${location.radius ?? 2000}`)
-      if (response.ok) {
-        const payload = await response.json() as { features?: any[]; timeSeries?: TimeSeries[]; changeDetection?: ChangeDetection; forensic?: ForensicAnalysis; evidence?: EvidenceItem[]; scenario?: Scenario }
-        if (payload.features?.length || payload.timeSeries?.length) {
-          return {
-            timeSeries: payload.timeSeries ?? (payload.features ?? []).slice(0, 4).map(normalizeFeature),
-            changeDetection: payload.changeDetection ?? null,
-            forensic: payload.forensic ?? null,
-            evidence: payload.evidence ?? [],
-            scenario: payload.scenario ?? null,
-          }
-        }
+      if (!response.ok) throw new Error(`Copernicus backend returned ${response.status}.`)
+      const payload = await response.json() as SnapshotPayload
+      return {
+        timeSeries: payload.timeSeries ?? (payload.features ?? []).slice(0, 4).map(normalizeFeature),
+        changeDetection: payload.changeDetection ?? null,
+        forensic: payload.forensic ?? null,
+        evidence: payload.evidence ?? [],
+        scenario: payload.scenario ?? null,
       }
     } catch {
-      // Fall through to the direct public fetch below.
+      return emptySnapshot
     }
   }
+
+  if (!isSupabaseConfigured) return emptySnapshot
 
   try {
-    const url = getCopernicusSearchUrl()
-    url.searchParams.set('collections', COPERNICUS_COLLECTION)
-    url.searchParams.set('bbox', bbox.join(','))
-    url.searchParams.set('limit', '4')
-    url.searchParams.set('datetime', '2023-02-01/2024-12-31')
-
-    const headers: HeadersInit = {
-      Accept: 'application/json',
-    }
-
-    if (COPERNICUS_TOKEN) {
-      headers.Authorization = `Bearer ${COPERNICUS_TOKEN}`
-    }
-
-    const response = await fetch(url.toString(), {
-      headers,
+    const { data, error } = await supabase.functions.invoke('copernicus-live', {
+      body: { lat: location.lat, lng: location.lng, radius: location.radius ?? 2000 },
     })
-
-    if (!response.ok) {
-      throw new Error(`Copernicus request failed with status ${response.status}`)
-    }
-
-    const payload = await response.json() as { features?: any[] }
+    if (error) throw error
+    const payload = data as SnapshotPayload
     const features = payload.features ?? []
-
-    if (!features.length) {
-      throw new Error('No Copernicus items returned for this area.')
-    }
-
-    const timeSeries = features.slice(0, 4).map((feature, index) => normalizeFeature(feature, index))
     return {
-      timeSeries,
-      changeDetection: null,
-      forensic: null,
-      evidence: [],
-      scenario: null,
+      timeSeries: payload.timeSeries ?? features.slice(0, 4).map(normalizeFeature),
+      changeDetection: payload.changeDetection ?? null,
+      forensic: payload.forensic ?? null,
+      evidence: payload.evidence ?? [],
+      scenario: payload.scenario ?? null,
     }
   } catch {
-    return {
-      timeSeries: [],
-      changeDetection: null,
-      forensic: null,
-      evidence: [],
-      scenario: null,
-    }
+    return emptySnapshot
   }
+}
+
+export const getCopernicusSnapshot = (location: Location): Promise<CopernicusSnapshot> => {
+  const key = `${location.lat.toFixed(5)}:${location.lng.toFixed(5)}:${location.radius ?? 2000}`
+  const cached = snapshotCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.promise
+
+  const promise = fetchCopernicusSnapshot(location)
+  snapshotCache.set(key, { expiresAt: Date.now() + 60_000, promise })
+  return promise
 }
 
 export const getCopernicusTimeSeries = async (location: Location) => getCopernicusSnapshot(location).then((snapshot) => snapshot.timeSeries)

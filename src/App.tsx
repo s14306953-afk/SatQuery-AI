@@ -110,16 +110,7 @@ function App() {
   const [selectedPlaceName, setSelectedPlaceName] = useState('')
   const [mapLayer, setMapLayer] = useState<'street' | 'satellite'>('satellite')
   const [voiceStatus, setVoiceStatus] = useState('idle')
-  const [conversation, setConversation] = useState<Array<{ question: string; answer: string }>>([
-    {
-      question: 'What objects are visible?',
-      answer: 'Urban structures, road networks, and water channels are visible in the sample region.',
-    },
-    {
-      question: 'How much agricultural land is present?',
-      answer: 'Approximately 38.4% of the area is classified as agriculture in the current workspace result.',
-    },
-  ])
+  const [conversation, setConversation] = useState<Array<{ question: string; answer: string }>>([])
   const [isChatbotOpen, setIsChatbotOpen] = useState(false)
   const [chatbotInput, setChatbotInput] = useState('')
   const [isChatbotTyping, setIsChatbotTyping] = useState(false)
@@ -339,7 +330,7 @@ function App() {
 
   const getNearbyLocation = () => new Promise<{ lat: number; lng: number } | null>((resolve) => {
     if (!('geolocation' in navigator)) {
-      setNearbyError('Location access is unavailable in this browser. You can manually select an area on the map instead.')
+      setNearbyError('Location access is unavailable in this browser. Enter coordinates above to continue.')
       resolve(null)
       return
     }
@@ -352,8 +343,15 @@ function App() {
         setLocationAddress('Exact address is kept out of the report unless needed for this analysis')
         resolve(location)
       },
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 },
+      (error) => {
+        setNearbyError(error.code === error.PERMISSION_DENIED
+          ? 'Location permission was denied. Allow location access in your browser settings, or enter coordinates above.'
+          : error.code === error.TIMEOUT
+            ? 'The location request timed out. Try again or enter coordinates above.'
+            : 'Unable to determine your location. Check device location settings or enter coordinates above.')
+        resolve(null)
+      },
+      { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 },
     )
   })
 
@@ -549,19 +547,28 @@ function App() {
   }
 
   const runNearbyAnalysis = async (overrideLocation?: { lat: number; lng: number }) => {
-    setNearbyPermissionOpen(false)
     setNearbyLoading(true)
     setNearbyError('')
 
     const manualLocation = parseManualLocation(manualLocationInput)
-    const location = overrideLocation ?? currentLocation ?? manualLocation ?? await getNearbyLocation()
+    const manualSelection = overrideLocation ?? manualLocation
+    const location = manualSelection ?? currentLocation ?? await getNearbyLocation()
     if (!location) {
-      await recordNearbyPermission('denied')
+      if (!manualSelection) await recordNearbyPermission('denied')
       setNearbyLoading(false)
-      setNearbyError('Location access was not granted. Enter coordinates in the nearby analysis dialog or allow browser location access to continue.')
+      setNearbyError((current) => current || 'Location access was not granted. Enter coordinates above or allow browser location access to continue.')
       return
     }
-    await recordNearbyPermission('granted')
+    setNearbyPermissionOpen(false)
+    if (manualSelection) {
+      setCurrentLocation(location)
+      setManualLocationInput(`${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`)
+      setSelectedPlaceName('')
+      setLocationStatus('Using manually selected coordinates')
+      setLocationAddress('')
+    } else {
+      await recordNearbyPermission('granted')
+    }
 
     const issues = generateNearbyIssues(location, nearbyRadius)
     const nearbyResult: NearbyIssueAnalysis = {
@@ -670,13 +677,21 @@ function App() {
 
   const currentLabels = translatedLabels[(language === 'es' || language === 'fr' ? language : 'en')]
 
-  const comparisonSummary = useMemo(() => ({
-    from: new Date(beforeDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-    to: new Date(afterDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-    growth: '+12.8%',
-    vegetation: '-8.3%',
-    water: '+4.1%',
-  }), [beforeDate, afterDate])
+  const comparisonSummary = useMemo(() => {
+    const changes = analysis?.result?.detected_changes ?? []
+    const formatChange = (pattern: RegExp) => {
+      const change = changes.find((item) => pattern.test(item.label))
+      return change ? `${change.percentage > 0 ? '+' : ''}${change.percentage}%` : 'Unavailable'
+    }
+
+    return {
+      from: new Date(beforeDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      to: new Date(afterDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      growth: formatChange(/urban|growth|built-up/i),
+      vegetation: formatChange(/vegetation/i),
+      water: formatChange(/water/i),
+    }
+  }, [analysis, beforeDate, afterDate])
 
   const nearbyIssueCategories = useMemo(() => {
     const categories = [
@@ -1230,7 +1245,7 @@ function App() {
           <div className="space-y-1">
             {sidebarItems.map((item) => (
               <button
-                key={item.value}
+                key={item.label}
                 type="button"
                 onClick={() => goToSection(item.value)}
                 className={`flex w-full items-center rounded-xl px-3 py-2 text-left text-sm transition ${activeSection === item.value ? 'bg-teal-500/15 text-teal-200' : 'text-slate-300 hover:bg-slate-800/80 hover:text-slate-100'}`}
@@ -1432,26 +1447,35 @@ function App() {
                 <label className="block text-xs uppercase tracking-[0.18em] text-slate-400">Manual coordinates</label>
                 <input
                   value={manualLocationInput}
-                  onChange={(event) => setManualLocationInput(event.target.value)}
+                  onChange={(event) => {
+                    setManualLocationInput(event.target.value)
+                    setNearbyError('')
+                  }}
                   placeholder="19.0760, 72.8777"
                   className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-teal-400 focus:outline-none"
                 />
+                {nearbyError && <div role="alert" className="mt-2 text-sm text-rose-300">{nearbyError}</div>}
               </div>
               <div className="mt-5 flex justify-end gap-3">
                 <button type="button" onClick={dismissNearbyPermission} className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Not Now</button>
                 <button
                   type="button"
                   onClick={() => {
-                    const manualLocation = parseManualLocation(manualLocationInput)
-                    if (manualLocation) {
+                    if (manualLocationInput.trim()) {
+                      const manualLocation = parseManualLocation(manualLocationInput)
+                      if (!manualLocation) {
+                        setNearbyError('Enter valid coordinates as latitude, longitude. Latitude must be -90 to 90 and longitude -180 to 180.')
+                        return
+                      }
                       void runNearbyAnalysis(manualLocation)
                       return
                     }
                     void runNearbyAnalysis()
                   }}
-                  className="rounded-lg bg-teal-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-teal-300"
+                  disabled={nearbyLoading}
+                  className="rounded-lg bg-teal-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-teal-300 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {manualLocationInput ? 'Use Coordinates' : 'Allow Location'}
+                  {nearbyLoading ? 'Getting location...' : manualLocationInput.trim() ? 'Use Coordinates' : 'Allow Location'}
                 </button>
               </div>
             </div>
@@ -1732,7 +1756,7 @@ function App() {
 
             <div className="relative mt-4 overflow-hidden rounded-2xl border border-slate-700 bg-slate-950">
               {primaryImage ? <img src={primaryImage} alt="Satellite viewer" className="h-[420px] w-full object-cover" /> : <div className="flex h-[420px] items-center justify-center px-6 text-center text-sm text-slate-500">Your uploaded satellite imagery will appear here with detected objects and change overlays.</div>}
-              {heatmapEnabled && (
+              {heatmapEnabled && analysis?.result && (
                 <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(circle at 50% 30%, rgba(251, 146, 60, 0.45), transparent 30%), radial-gradient(circle at 72% 61%, rgba(34, 197, 94, 0.35), transparent 25%)', opacity: heatmapOpacity }} />
               )}
               {analysis?.result?.detected_objects?.map((object) => (
@@ -1750,11 +1774,13 @@ function App() {
                 />
               ))}
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-slate-950/60 via-transparent to-teal-500/10" />
-              <div className="absolute left-5 top-5 rounded-lg bg-slate-950/75 px-2 py-1 text-xs text-slate-200">Satellite image</div>
-              <div className="absolute bottom-5 left-5 right-5 rounded-xl border border-white/10 bg-slate-950/60 p-3 text-sm text-slate-200">
-                <div className="flex items-center gap-2 font-medium"><MapPinned size={15} className="text-teal-300" /> Analysis area</div>
-                <div className="mt-2 text-xs text-slate-400">Detected objects: 42 · Average confidence: 91.6%</div>
-              </div>
+              {primaryImage && <div className="absolute left-5 top-5 rounded-lg bg-slate-950/75 px-2 py-1 text-xs text-slate-200">Satellite image</div>}
+              {analysis?.result && (
+                <div className="absolute bottom-5 left-5 right-5 rounded-xl border border-white/10 bg-slate-950/60 p-3 text-sm text-slate-200">
+                  <div className="flex items-center gap-2 font-medium"><MapPinned size={15} className="text-teal-300" /> Analysis area</div>
+                  <div className="mt-2 text-xs text-slate-400">Detected objects: {analysis.result.detected_objects.length} · Analysis confidence: {analysis.confidence_score}%</div>
+                </div>
+              )}
             </div>
 
             <div className="mt-5 grid gap-4 xl:grid-cols-3">
@@ -2040,9 +2066,9 @@ function App() {
           <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
             <div className="mb-3 flex items-center gap-2 text-lg font-semibold"><Activity size={18} className="text-teal-300" /> Disaster analysis mode</div>
             <div className="space-y-2 text-sm text-slate-200">
-              <div className="flex items-center justify-between"><span>Affected Area</span><span className="font-semibold text-white">{analysis?.result?.area_measurements?.affected_area ?? 14.2} km²</span></div>
-              <div className="flex items-center justify-between"><span>Severity</span><span className="text-red-300">{mode === 'disaster' && analysis ? 'High' : 'Not run'}</span></div>
-              <div className="flex items-center justify-between"><span>Confidence</span><span className="text-emerald-300">{mode === 'disaster' ? `${analysis?.result?.confidence_score ?? 89}%` : '89%'}</span></div>
+              <div className="flex items-center justify-between"><span>Affected Area</span><span className="font-semibold text-white">{analysis?.type === 'disaster' && analysis.result?.area_measurements?.affected_area !== undefined ? `${analysis.result.area_measurements.affected_area} km²` : 'Unavailable'}</span></div>
+              <div className="flex items-center justify-between"><span>Reliability</span><span className="text-red-300">{analysis?.type === 'disaster' ? analysis.result?.reliability_level ?? 'Unavailable' : 'Not analyzed'}</span></div>
+              <div className="flex items-center justify-between"><span>Confidence</span><span className="text-emerald-300">{analysis?.type === 'disaster' ? `${analysis.confidence_score}%` : 'Unavailable'}</span></div>
               <button type="button" onClick={() => startModeAnalysis('disaster', 'Which areas are affected by flooding or disaster damage?')} className="mt-3 w-full rounded-lg border border-teal-400/40 bg-teal-500/15 px-3 py-2 text-xs text-teal-200 hover:bg-teal-500/25">Analyze disaster imagery</button>
             </div>
           </div>
@@ -2050,9 +2076,9 @@ function App() {
           <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
             <div className="mb-3 flex items-center gap-2 text-lg font-semibold"><BarChart3 size={18} className="text-teal-300" /> Agriculture monitoring</div>
             <div className="space-y-2 text-sm text-slate-200">
-              <div className="flex items-center justify-between"><span>Agricultural Area</span><span className="font-semibold text-white">42.8 km²</span></div>
-              <div className="flex items-center justify-between"><span>Vegetation Change</span><span className="text-yellow-300">-6.4%</span></div>
-              <div className="flex items-center justify-between"><span>Stress Regions</span><span className="text-teal-300">7</span></div>
+              <div className="flex items-center justify-between"><span>Agricultural Area</span><span className="font-semibold text-white">{analysis?.type === 'agriculture' && analysis.result?.area_measurements?.agricultural_area !== undefined ? `${analysis.result.area_measurements.agricultural_area} km²` : 'Unavailable'}</span></div>
+              <div className="flex items-center justify-between"><span>Vegetation Change</span><span className="text-yellow-300">{analysis?.type === 'agriculture' ? analysis.result?.detected_changes.find((change) => /vegetation/i.test(change.label))?.percentage ?? 'Unavailable' : 'Unavailable'}{analysis?.type === 'agriculture' && analysis.result?.detected_changes.some((change) => /vegetation/i.test(change.label)) ? '%' : ''}</span></div>
+              <div className="flex items-center justify-between"><span>Detected Objects</span><span className="text-teal-300">{analysis?.type === 'agriculture' ? analysis.result?.detected_objects.length ?? 0 : 'Unavailable'}</span></div>
               <button type="button" onClick={() => startModeAnalysis('agriculture', 'Has vegetation or agricultural land changed?')} className="mt-3 w-full rounded-lg border border-teal-400/40 bg-teal-500/15 px-3 py-2 text-xs text-teal-200 hover:bg-teal-500/25">Analyze agriculture</button>
             </div>
           </div>
@@ -2060,9 +2086,9 @@ function App() {
           <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
             <div className="mb-3 flex items-center gap-2 text-lg font-semibold"><MapPinned size={18} className="text-teal-300" /> Urban growth analysis</div>
             <div className="space-y-2 text-sm text-slate-200">
-              <div className="flex items-center justify-between"><span>Urban Expansion</span><span className="font-semibold text-white">13.7%</span></div>
-              <div className="flex items-center justify-between"><span>New Structures</span><span className="text-emerald-300">126</span></div>
-              <div className="flex items-center justify-between"><span>Changed Area</span><span className="text-violet-300">17.2 km²</span></div>
+              <div className="flex items-center justify-between"><span>Urban Expansion</span><span className="font-semibold text-white">{analysis?.type === 'urban_growth' ? analysis.result?.detected_changes.find((change) => /urban|built-up|structure/i.test(change.label))?.percentage ?? 'Unavailable' : 'Unavailable'}{analysis?.type === 'urban_growth' && analysis.result?.detected_changes.some((change) => /urban|built-up|structure/i.test(change.label)) ? '%' : ''}</span></div>
+              <div className="flex items-center justify-between"><span>New Structures</span><span className="text-emerald-300">{analysis?.type === 'urban_growth' ? analysis.result?.detected_objects.filter((item) => /building|structure/i.test(`${item.object_type} ${item.label}`)).length ?? 0 : 'Unavailable'}</span></div>
+              <div className="flex items-center justify-between"><span>Changed Area</span><span className="text-violet-300">{analysis?.type === 'urban_growth' && analysis.result?.area_measurements?.urban_area !== undefined ? `${analysis.result.area_measurements.urban_area} km²` : 'Unavailable'}</span></div>
               <button type="button" onClick={() => startModeAnalysis('urban_growth', 'Are there signs of urban growth or new construction?')} className="mt-3 w-full rounded-lg border border-teal-400/40 bg-teal-500/15 px-3 py-2 text-xs text-teal-200 hover:bg-teal-500/25">Analyze urban growth</button>
             </div>
           </div>

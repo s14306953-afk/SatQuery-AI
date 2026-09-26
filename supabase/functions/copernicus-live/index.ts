@@ -17,7 +17,8 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: 'GET or POST is required.' }, 405)
   }
 
-  const baseUrl = Deno.env.get('COPERNICUS_BASE_URL') || 'https://stac.dataspace.copernicus.eu/stac'
+  const configuredBaseUrl = Deno.env.get('COPERNICUS_BASE_URL') || 'https://stac.dataspace.copernicus.eu/v1'
+  const baseUrl = configuredBaseUrl.replace(/\/+$/, '').replace(/\/stac$/i, '/v1')
   const collection = Deno.env.get('COPERNICUS_COLLECTION') || 'sentinel-2-l2a'
   const token = Deno.env.get('COPERNICUS_TOKEN') || ''
 
@@ -32,7 +33,11 @@ Deno.serve(async (request) => {
     params.set('collections', collection)
     params.set('bbox', bbox)
     params.set('limit', '4')
-    params.set('datetime', '2023-02-01/2024-12-31')
+    const endDate = new Date()
+    const startDate = new Date(endDate)
+    startDate.setUTCFullYear(startDate.getUTCFullYear() - 2)
+    params.set('datetime', `${startDate.toISOString()}/${endDate.toISOString()}`)
+    params.set('sortby', '-properties.datetime')
 
     const url = new URL(`${baseUrl.replace(/\/+$/, '')}/search`)
     url.search = params.toString()
@@ -41,10 +46,16 @@ Deno.serve(async (request) => {
     if (token) headers.Authorization = `Bearer ${token}`
 
     const response = await fetch(url.toString(), { headers })
-    const data = await response.json() as { features?: Array<Record<string, unknown>> }
+    const responseText = await response.text()
+    let data: { features?: Array<Record<string, unknown>> }
+    try {
+      data = JSON.parse(responseText) as { features?: Array<Record<string, unknown>> }
+    } catch {
+      return jsonResponse({ error: 'Copernicus returned a non-JSON response.', details: responseText.slice(0, 300) }, 502)
+    }
 
     if (!response.ok) {
-      return jsonResponse({ error: 'Copernicus fetch failed', details: data }, response.status)
+      return jsonResponse({ error: 'Copernicus fetch failed.', details: data }, response.status)
     }
 
     const features = Array.isArray(data?.features) ? data.features : []
