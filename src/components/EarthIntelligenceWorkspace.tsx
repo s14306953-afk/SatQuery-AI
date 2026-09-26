@@ -27,15 +27,12 @@ const defaultLocation: Location = { id: 'default-location', name: 'Bengaluru Urb
 
 export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorkspaceProps) {
   const activeLocation = location ?? defaultLocation
-  const [selectedScenarioType, setSelectedScenarioType] = useState('urban-expansion')
-  const [changePercent, setChangePercent] = useState(20)
-  const [impactRadius, setImpactRadius] = useState(800)
   const [scenario, setScenario] = useState<Scenario>({
     id: 'loading-scenario',
     title: 'Loading scenario',
-    mode: selectedScenarioType,
-    percentage: changePercent,
-    radius: impactRadius,
+    mode: 'urban-expansion',
+    percentage: 20,
+    radius: 800,
     affectedArea: 0,
     confidence: 0,
     summary: 'Loading Copernicus analysis…',
