@@ -28,7 +28,7 @@ import { MapContainer, Circle, CircleMarker, Marker, Popup, Rectangle, TileLayer
 import { BarChart, Bar, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { generateAnalysisPdf } from './services/reportService'
 import { listAnalysisHistory, saveAnalysisResult } from './services/analysisService'
-import { analyzeWithGemini } from './services/ai/aiService'
+import { analyzeWithGemini, type AnalysisMode } from './services/ai/aiService'
 import { validateImageFile } from './services/imageService'
 import { fetchNearbyFeatures } from './services/proximityService'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
@@ -808,7 +808,8 @@ function App() {
     if (view !== 'history') void runClimateAnalysis()
   }
 
-  const runAnalysis = async (queryOverride?: string) => {
+  const runAnalysis = async (queryOverride?: string, modeOverride?: AnalysisMode) => {
+    const modeToAnalyze = modeOverride ?? mode as AnalysisMode
     const queryToAnalyze = queryOverride?.trim() || query.trim()
     if (!images.length) {
       setAnalysisError('Upload at least one image before starting an analysis.')
@@ -823,11 +824,11 @@ function App() {
     setIsLoading(true)
     setAnalysisError('')
     try {
-      const result = await analyzeWithGemini(mode as any, queryToAnalyze, images)
+      const result = await analyzeWithGemini(modeToAnalyze, queryToAnalyze, images)
       const saved = await saveAnalysisResult({
         id: crypto.randomUUID(),
         title: 'Live Analysis',
-        type: mode as any,
+        type: modeToAnalyze,
         query: queryToAnalyze,
         summary: result.summary,
         confidence_score: result.confidence_score,
@@ -857,7 +858,7 @@ function App() {
     setMode(selectedMode)
     setQuery(selectedQuery)
     setActiveSection('analysis')
-    if (images.length) void runAnalysis(selectedQuery)
+    if (images.length) void runAnalysis(selectedQuery, selectedMode as AnalysisMode)
     else setAnalysisError('Upload an image in the Analysis section, then click ANALYZE to run this mode.')
   }
 
