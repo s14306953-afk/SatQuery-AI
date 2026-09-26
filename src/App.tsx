@@ -854,12 +854,14 @@ function App() {
     }
   }
 
-  const startModeAnalysis = (selectedMode: string, selectedQuery: string) => {
+  const startModeAnalysis = (selectedMode: AnalysisMode, selectedQuery: string) => {
     setMode(selectedMode)
     setQuery(selectedQuery)
-    setActiveSection('analysis')
-    if (images.length) void runAnalysis(selectedQuery, selectedMode as AnalysisMode)
-    else setAnalysisError('Upload an image in the Analysis section, then click ANALYZE to run this mode.')
+    setAnalysisError(images.length
+      ? ''
+      : `Upload satellite imagery for ${selectedMode.replaceAll('_', ' ')} analysis, then click ANALYZE.`)
+    goToSection('analysis')
+    if (images.length) void runAnalysis(selectedQuery, selectedMode)
   }
 
   const handleFiles = async (fileList: FileList | null) => {
