@@ -3,32 +3,21 @@ import {
   Activity,
   ArrowRight,
   BrainCircuit,
-  CalendarClock,
-  CirclePlay,
   Compass,
   Gauge,
-  Mic,
-  Pause,
   Radar,
-  ScanSearch,
   ShieldCheck,
   Sparkles,
-  TimerReset,
-  UserRound,
-  Wand2,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import {
   buildChangeDetection,
-  buildEvidenceChain,
   buildForensicAnalysis,
   buildScenario,
   buildSatelliteImages,
-  buildTimeSeries,
-  buildVoiceQueries,
   buildReport,
 } from '../services/earthIntelligenceService'
-import type { Location, Scenario, VoiceQuery } from '../types'
+import type { Location, Scenario } from '../types'
 
 interface EarthIntelligenceWorkspaceProps {
   location: Location | null
@@ -38,14 +27,9 @@ const defaultLocation: Location = { id: 'default-location', name: 'Bengaluru Urb
 
 export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorkspaceProps) {
   const activeLocation = location ?? defaultLocation
-  const [timelineIndex, setTimelineIndex] = useState(2)
-  const [isPlaying, setIsPlaying] = useState(false)
   const [selectedScenarioType, setSelectedScenarioType] = useState('urban-expansion')
   const [changePercent, setChangePercent] = useState(20)
   const [impactRadius, setImpactRadius] = useState(800)
-  const [selectedEvidenceId, setSelectedEvidenceId] = useState('evidence-1')
-  const [voiceInput, setVoiceInput] = useState('What changed here?')
-  const [voiceHistory, setVoiceHistory] = useState<VoiceQuery[]>(() => buildVoiceQueries())
   const [scenario, setScenario] = useState<Scenario>({
     id: 'loading-scenario',
     title: 'Loading scenario',
@@ -60,32 +44,26 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
     source: 'Copernicus Data Space',
     location: activeLocation.name,
   })
-  const [timeSeries, setTimeSeries] = useState<any[]>([])
   const [satelliteImages, setSatelliteImages] = useState<any[]>([])
   const [changeDetection, setChangeDetection] = useState<any>(null)
   const [forensic, setForensic] = useState<any>(null)
-  const [evidenceChain, setEvidenceChain] = useState<any[]>([])
 
   useEffect(() => {
     let active = true
 
     const loadAnalysis = async () => {
-      const [series, images, detection, analysis, evidence, nextScenario] = await Promise.all([
-        buildTimeSeries(activeLocation),
+      const [images, detection, analysis, nextScenario] = await Promise.all([
         buildSatelliteImages(activeLocation),
         buildChangeDetection(activeLocation),
         buildForensicAnalysis(activeLocation),
-        buildEvidenceChain(activeLocation),
         buildScenario(activeLocation, changePercent, selectedScenarioType, impactRadius),
       ])
 
       if (!active) return
 
-      setTimeSeries(series)
       setSatelliteImages(images)
       setChangeDetection(detection)
       setForensic(analysis)
-      setEvidenceChain(evidence)
       setScenario(nextScenario)
     }
 
@@ -95,17 +73,6 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
       active = false
     }
   }, [activeLocation, changePercent, selectedScenarioType, impactRadius])
-
-  const currentScene = timeSeries[timelineIndex] ?? timeSeries[timeSeries.length - 1] ?? {
-    id: 'loading-scene',
-    date: new Date().toISOString(),
-    sensor: 'Loading data',
-    source: 'Fetching Copernicus layers…',
-    summary: 'Loading the latest satellite interpretation for this site.',
-    changePercent: 0,
-    acquisition: 'Loading…',
-    band: '—',
-  }
 
   const resolvedChangeDetection = changeDetection ?? {
     id: 'loading-change',
@@ -141,53 +108,6 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
     () => buildReport(activeLocation, resolvedChangeDetection, resolvedForensic, scenario),
     [activeLocation, resolvedChangeDetection, resolvedForensic, scenario],
   )
-
-  const handleScenarioRun = async () => {
-    const nextScenario = await buildScenario(activeLocation, changePercent, selectedScenarioType, impactRadius)
-    setScenario(nextScenario)
-  }
-
-  const handleVoiceSubmit = () => {
-    const question = voiceInput.trim()
-    if (!question) return
-
-    const answer = question.toLowerCase().includes('why')
-      ? 'Supported explanation: urban expansion and local water stress are the leading contributors. The exact cause remains a supported interpretation until field records or additional operational data are added.'
-      : question.toLowerCase().includes('how much') || question.toLowerCase().includes('area')
-        ? `Approximately ${resolvedChangeDetection.area.toFixed(2)} km² of the monitored footprint shows measurable change.`
-        : question.toLowerCase().includes('compare') || question.toLowerCase().includes('last year')
-          ? 'The selected time series shows a clear before/after trend: vegetation declined while the built-up footprint increased across the monitored dates.'
-          : 'Detected: vegetation loss and expansion are visible in the target area, and the evidence chain shows multiple supporting signals.'
-
-    setVoiceHistory((current) => [
-      { id: crypto.randomUUID(), question, answer, timestamp: new Date().toISOString(), context: 'live-query' },
-      ...current,
-    ])
-  }
-
-  const handleSpeechCapture = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      alert('Voice input is not supported in this browser. The text query still works.')
-      return
-    }
-
-    const recognition = new SpeechRecognition()
-    recognition.lang = 'en-US'
-    recognition.interimResults = false
-    recognition.maxAlternatives = 1
-    recognition.onresult = (event: any) => {
-      const transcript = String(event.results[0][0].transcript || '').trim()
-      if (transcript) {
-        setVoiceInput(transcript)
-        setVoiceHistory((current) => [
-          { id: crypto.randomUUID(), question: transcript, answer: 'Voice input captured. The workspace is using the selected site context and the current time series to answer the question.', timestamp: new Date().toISOString(), context: 'voice' },
-          ...current,
-        ])
-      }
-    }
-    recognition.start()
-  }
 
   return (
     <div className="space-y-6">
