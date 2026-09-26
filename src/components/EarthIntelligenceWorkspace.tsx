@@ -17,7 +17,7 @@ import {
   UserRound,
   Wand2,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   buildChangeDetection,
   buildEvidenceChain,
@@ -46,18 +46,105 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
   const [selectedEvidenceId, setSelectedEvidenceId] = useState('evidence-1')
   const [voiceInput, setVoiceInput] = useState('What changed here?')
   const [voiceHistory, setVoiceHistory] = useState<VoiceQuery[]>(() => buildVoiceQueries())
-  const [scenario, setScenario] = useState<Scenario>(() => buildScenario(activeLocation, changePercent, selectedScenarioType, impactRadius))
+  const [scenario, setScenario] = useState<Scenario>({
+    id: 'loading-scenario',
+    title: 'Loading scenario',
+    mode: selectedScenarioType,
+    percentage: changePercent,
+    radius: impactRadius,
+    affectedArea: 0,
+    confidence: 0,
+    summary: 'Loading Copernicus analysis…',
+    currentVsScenario: { current: 100, simulated: 100 },
+    impactedRegions: [],
+    source: 'Copernicus Data Space',
+    location: activeLocation.name,
+  })
+  const [timeSeries, setTimeSeries] = useState<any[]>([])
+  const [satelliteImages, setSatelliteImages] = useState<any[]>([])
+  const [changeDetection, setChangeDetection] = useState<any>(null)
+  const [forensic, setForensic] = useState<any>(null)
+  const [evidenceChain, setEvidenceChain] = useState<any[]>([])
 
-  const timeSeries = useMemo(() => buildTimeSeries(activeLocation), [activeLocation])
-  const satelliteImages = useMemo(() => buildSatelliteImages(activeLocation), [activeLocation])
-  const changeDetection = useMemo(() => buildChangeDetection(activeLocation), [activeLocation])
-  const forensic = useMemo(() => buildForensicAnalysis(activeLocation), [activeLocation])
-  const evidenceChain = useMemo(() => buildEvidenceChain(activeLocation), [activeLocation])
+  useEffect(() => {
+    let active = true
 
-  const currentScene = timeSeries[timelineIndex] ?? timeSeries[timeSeries.length - 1]
+    const loadAnalysis = async () => {
+      const [series, images, detection, analysis, evidence, nextScenario] = await Promise.all([
+        buildTimeSeries(activeLocation),
+        buildSatelliteImages(activeLocation),
+        buildChangeDetection(activeLocation),
+        buildForensicAnalysis(activeLocation),
+        buildEvidenceChain(activeLocation),
+        buildScenario(activeLocation, changePercent, selectedScenarioType, impactRadius),
+      ])
 
-  const handleScenarioRun = () => {
-    setScenario(buildScenario(activeLocation, changePercent, selectedScenarioType, impactRadius))
+      if (!active) return
+
+      setTimeSeries(series)
+      setSatelliteImages(images)
+      setChangeDetection(detection)
+      setForensic(analysis)
+      setEvidenceChain(evidence)
+      setScenario(nextScenario)
+    }
+
+    void loadAnalysis()
+
+    return () => {
+      active = false
+    }
+  }, [activeLocation, changePercent, selectedScenarioType, impactRadius])
+
+  const currentScene = timeSeries[timelineIndex] ?? timeSeries[timeSeries.length - 1] ?? {
+    id: 'loading-scene',
+    date: new Date().toISOString(),
+    sensor: 'Loading data',
+    source: 'Fetching Copernicus layers…',
+    summary: 'Loading the latest satellite interpretation for this site.',
+    changePercent: 0,
+    acquisition: 'Loading…',
+    band: '—',
+  }
+
+  const resolvedChangeDetection = changeDetection ?? {
+    id: 'loading-change',
+    location: activeLocation.name,
+    dateRange: 'Loading…',
+    changeType: 'Loading',
+    percentage: 0,
+    area: 0,
+    areaUnit: 'km²',
+    alertLevel: '—',
+    description: 'Loading the latest Copernicus analysis…',
+    source: 'Copernicus Data Space',
+    confidence: 0,
+  }
+
+  const resolvedForensic = forensic ?? {
+    id: 'loading-forensic',
+    question: 'Why did vegetation decrease here?',
+    location: activeLocation.name,
+    whatChanged: 'Loading analysis…',
+    whenChanged: 'Loading analysis…',
+    detectedSummary: 'Loading analysis…',
+    supportedExplanation: 'Loading analysis…',
+    factors: [],
+    evidence: ['Loading analysis…'],
+    confidence: 0,
+    reliability: 'MEDIUM',
+    source: 'Copernicus Data Space',
+    date: new Date().toISOString(),
+  }
+
+  const reportText = useMemo(
+    () => buildReport(activeLocation, resolvedChangeDetection, resolvedForensic, scenario),
+    [activeLocation, resolvedChangeDetection, resolvedForensic, scenario],
+  )
+
+  const handleScenarioRun = async () => {
+    const nextScenario = await buildScenario(activeLocation, changePercent, selectedScenarioType, impactRadius)
+    setScenario(nextScenario)
   }
 
   const handleVoiceSubmit = () => {
@@ -67,7 +154,7 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
     const answer = question.toLowerCase().includes('why')
       ? 'Supported explanation: urban expansion and local water stress are the leading contributors. The exact cause remains a supported interpretation until field records or additional operational data are added.'
       : question.toLowerCase().includes('how much') || question.toLowerCase().includes('area')
-        ? `Approximately ${changeDetection.area.toFixed(2)} km² of the monitored footprint shows measurable change.`
+        ? `Approximately ${resolvedChangeDetection.area.toFixed(2)} km² of the monitored footprint shows measurable change.`
         : question.toLowerCase().includes('compare') || question.toLowerCase().includes('last year')
           ? 'The selected time series shows a clear before/after trend: vegetation declined while the built-up footprint increased across the monitored dates.'
           : 'Detected: vegetation loss and expansion are visible in the target area, and the evidence chain shows multiple supporting signals.'
@@ -102,11 +189,6 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
     recognition.start()
   }
 
-  const reportText = useMemo(
-    () => buildReport(activeLocation, changeDetection, forensic, scenario),
-    [activeLocation, changeDetection, forensic, scenario],
-  )
-
   return (
     <div className="space-y-6">
       <div className="rounded-[28px] border border-slate-200/80 bg-white/80 p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-sm">
@@ -124,9 +206,9 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
 
         <div className="grid gap-4 md:grid-cols-3">
           {[
-            { label: 'Detected change', value: `${changeDetection.percentage.toFixed(1)}%`, icon: Activity },
-            { label: 'Area affected', value: `${changeDetection.area.toFixed(2)} km²`, icon: Gauge },
-            { label: 'Confidence', value: `${Math.round(changeDetection.confidence * 100)}%`, icon: ShieldCheck },
+            { label: 'Detected change', value: `${resolvedChangeDetection.percentage.toFixed(1)}%`, icon: Activity },
+            { label: 'Area affected', value: `${resolvedChangeDetection.area.toFixed(2)} km²`, icon: Gauge },
+            { label: 'Confidence', value: `${Math.round(resolvedChangeDetection.confidence * 100)}%`, icon: ShieldCheck },
           ].map(({ label, value, icon: Icon }) => (
             <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-slate-500">
@@ -222,10 +304,10 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
         <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="text-lg font-semibold text-slate-900">Why did vegetation decrease here?</div>
-            <p className="mt-3 text-sm leading-6 text-slate-600">{forensic.supportedExplanation}</p>
+            <p className="mt-3 text-sm leading-6 text-slate-600">{resolvedForensic.supportedExplanation}</p>
 
             <div className="mt-4 space-y-3">
-              {forensic.factors.map((factor) => (
+              {resolvedForensic.factors.map((factor: { type: string; label: string; detail: string }) => (
                 <div key={factor.label} className="rounded-xl border border-slate-200 bg-white p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{factor.type}</div>
@@ -243,7 +325,7 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Evidence overview</div>
             <div className="mt-4 space-y-3 text-sm text-slate-600">
-              {forensic.evidence.map((item) => (
+              {resolvedForensic.evidence.map((item: string) => (
                 <div key={item} className="flex gap-3 rounded-xl border border-slate-200 bg-white p-3">
                   <ArrowRight size={16} className="mt-0.5 text-emerald-600" />
                   <span>{item}</span>
@@ -351,7 +433,13 @@ export function EarthIntelligenceWorkspace({ location }: EarthIntelligenceWorksp
 
             <div className="flex gap-2 pt-2">
               <button type="button" onClick={handleScenarioRun} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Run simulation</button>
-              <button type="button" onClick={() => { setChangePercent(20); setImpactRadius(800); setSelectedScenarioType('urban-expansion'); setScenario(buildScenario(activeLocation, 20, 'urban-expansion', 800)) }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">Reset</button>
+              <button type="button" onClick={async () => {
+                setChangePercent(20)
+                setImpactRadius(800)
+                setSelectedScenarioType('urban-expansion')
+                const nextScenario = await buildScenario(activeLocation, 20, 'urban-expansion', 800)
+                setScenario(nextScenario)
+              }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">Reset</button>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">

@@ -487,17 +487,48 @@ function App() {
       setSatelliteSearchMessage('Configure Supabase to search the Copernicus Dataset.')
       return
     }
-    const { data, error } = await supabase.functions.invoke('satellite-search', { body: { latitude: location.lat, longitude: location.lng, radius: nearbyRadius, cloudCover: 30 } })
-    if (error) {
-      setSatelliteSearchMessage('Copernicus Dataset search is unavailable. Check the Supabase function configuration.')
+
+    const tryFunction = async (functionName: string, payload: Record<string, unknown>) => {
+      const { data, error } = await supabase.functions.invoke(functionName, { body: payload })
+      if (error) return null
+      return data
+    }
+
+    const liveData = await tryFunction('copernicus-live', { lat: location.lat, lng: location.lng, radius: nearbyRadius })
+
+    if (liveData && Array.isArray(liveData.features)) {
+      const mappedScenes = liveData.features.slice(0, 6).map((feature: Record<string, unknown>, index: number) => {
+        const properties = (feature.properties as Record<string, unknown>) ?? {}
+        const datetime = (properties.datetime as string | undefined) ?? new Date(Date.now() - index * 86400000).toISOString()
+        const cloudCover = (properties.cloudCover as number | undefined) ?? (properties['eo:cloud_cover'] as number | undefined) ?? null
+        const collection = String((feature.collection as string | undefined) ?? 'sentinel-2-l2a')
+
+        return {
+          id: String((feature.id as string | undefined) ?? `copernicus-${index}`),
+          name: String((feature.id as string | undefined) ?? `copernicus-${index}`),
+          acquisition: datetime,
+          satellite: 'Sentinel-2',
+          sensor: 'MSI',
+          processing: 'STAC collection data',
+          resolution: '10 m',
+          cloudCover,
+          productUrl: `${collection}?id=${encodeURIComponent(String(feature.id ?? ''))}`,
+        }
+      })
+
+      setSatelliteScenes(mappedScenes)
+      setSatelliteSearchMessage(mappedScenes.length ? `${mappedScenes.length} Copernicus Dataset product(s) found.` : 'No Copernicus Dataset products matched this location and date range.')
       return
     }
-    if (data?.status === 'ready') {
-      setSatelliteScenes(data.scenes ?? [])
-      setSatelliteSearchMessage(data.scenes?.length ? `${data.scenes.length} Copernicus Dataset product(s) found.` : 'No Copernicus Dataset products matched this location and date range.')
-    } else {
-      setSatelliteSearchMessage(data?.message || 'No Copernicus Dataset data is available.')
+
+    const legacyData = await tryFunction('satellite-search', { latitude: location.lat, longitude: location.lng, radius: nearbyRadius, cloudCover: 30 })
+    if (legacyData?.status === 'ready') {
+      setSatelliteScenes(legacyData.scenes ?? [])
+      setSatelliteSearchMessage(legacyData.scenes?.length ? `${legacyData.scenes.length} Copernicus Dataset product(s) found.` : 'No Copernicus Dataset products matched this location and date range.')
+      return
     }
+
+    setSatelliteSearchMessage(legacyData?.message || 'No Copernicus Dataset data is available.')
   }
 
   const runNearbyAnalysis = async (overrideLocation?: { lat: number; lng: number }) => {
@@ -1064,7 +1095,7 @@ function App() {
   }
 
   return (
-    <div className="premium-shell min-h-screen bg-slate-50 text-slate-800">
+    <div className="premium-shell min-h-screen bg-[#040b16] text-slate-100">
       {isSearchOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 p-4 backdrop-blur-sm">
           <div className="mx-auto mt-16 max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_20px_80px_rgba(15,23,42,0.18)] ring-1 ring-teal-100">
